@@ -1,24 +1,5 @@
 # Parking Lot System
 
-## Design Decisions
--การออกแบบลานจอดรถ (Parking Lot Design)
-โจทย์บอกแต่ทางเขัามีทางเดียว
-1) ซับซ้อน ใช้ความคิดสร้างสรรค์มากเช่น radius , grid 
-2) simple  linear lot เรึยบง่ายตรงโจทย์
-ผมเลือก 2 ,1 ดูคิดมากเกินไป น่าจะใช้เวลาเยอะเกิน
--Car Size กับ Slot
-โจทย์บอกว่ารถมี size (small, medium, large) แต่ไม่ได้บอกว่า slot มี size 
-ทางเลือกหลักๆคือ 
-1) Slot ไม่มี size	ทุก slot จอดได้ทุก size, เก็บ car size ไว้แค่เป็น metadata --->ปกติ
-2) Slot มี size	Small slot จอดได้แค่ small, Large slot จอดได้ทุก size --->ซับซ้อนขึ้น แต่ realistic กว่า 
-ผมเลือก 2 เพิ่มความน่าสนใจและไม่ใช้เวลามาก
--การจัดวางของ slot แต่ละชนิด
-example 30-30-30 total 90
-1) Random ไม่มีในชีวิตจริง ดูแปลกๆซับซ้อนเพิ่มงานตัวเอง
-2) small(1-30) - medium(31-60) -large(61-90) ไม่ดีนะเพราะ small จอดได้แค่ small ,  large and medium อาจต้องจอดไกลโดยไม่มีเหตุผล สำหรับช่วงแรกๆ
-3) large - medium - small  ง่ายต่อการเข้าจอดที่ใกล้สุด
-ผมเลือก 3
-
 ## Assumptions
 - Parking lot has a single entry point
 - Slot 1 is nearest to entry, Slot N is farthest  
@@ -29,4 +10,50 @@ example 30-30-30 total 90
 
 ## Tech Stack
 - NestJS, TypeScript, PostgreSQL, TypeORM, Docker
+
+## Database Schema
+
+### Entity 1: ParkingLot
+```
+id            UUID, PK, default gen_random_uuid()
+name          VARCHAR(255), NOT NULL
+total_slots   INTEGER, NOT NULL
+created_at    TIMESTAMP, default NOW()
+updated_at    TIMESTAMP, default NOW()
+```
+
+### Entity 2: ParkingSlot
+```
+id             UUID, PK
+parking_lot_id UUID, FK → parking_lot.id, NOT NULL
+slot_number    INTEGER, NOT NULL  ← lower = nearer to entry
+slot_size      ENUM('SMALL','MEDIUM','LARGE'), NOT NULL
+is_available   BOOLEAN, default TRUE
+created_at     TIMESTAMP
+updated_at     TIMESTAMP
+
+UNIQUE constraint: (parking_lot_id, slot_number)
+INDEX on: (parking_lot_id, is_available, slot_size, slot_number)
+```
+
+### Entity 3: Ticket
+```
+id               UUID, PK
+parking_lot_id   UUID, FK → parking_lot.id
+parking_slot_id  UUID, FK → parking_slot.id
+plate_number     VARCHAR(20), NOT NULL
+car_size         ENUM('SMALL','MEDIUM','LARGE'), NOT NULL
+entry_time       TIMESTAMP, default NOW()
+exit_time        TIMESTAMP, NULLABLE
+is_active        BOOLEAN, default TRUE  ← false = car has left
+created_at       TIMESTAMP
+updated_at       TIMESTAMP
+
+INDEX on: (parking_lot_id, is_active)
+INDEX on: (plate_number, is_active)
+```
+
+---
+
+
 
