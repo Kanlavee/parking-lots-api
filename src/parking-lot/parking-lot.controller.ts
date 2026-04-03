@@ -1,7 +1,18 @@
-import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  Param,
+  Query,
+  HttpCode,
+  HttpStatus,
+  ParseEnumPipe,
+} from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { ParkingLotService } from './parking-lot.service';
 import { CreateParkingLotDto } from './dto/create-parking-lot.dto';
+import { CarSize } from '../common/enums/car-size.enum';
 
 @ApiTags('Parking Lots')
 @Controller('parking-lots')
@@ -15,5 +26,43 @@ export class ParkingLotController {
   @ApiResponse({ status: 400, description: 'Validation error or duplicate slot sizes' })
   create(@Body() dto: CreateParkingLotDto) {
     return this.parkingLotService.create(dto);
+  }
+
+  @Get(':parkingLotId/status')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Get full status of a parking lot including per-slot occupancy' })
+  @ApiParam({ name: 'parkingLotId', type: String })
+  @ApiResponse({ status: 200, description: 'Parking lot status with slot details' })
+  @ApiResponse({ status: 404, description: 'Parking lot not found' })
+  getStatus(@Param('parkingLotId') parkingLotId: string) {
+    return this.parkingLotService.getStatus(parkingLotId);
+  }
+
+  @Get(':parkingLotId/cars')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Get plate numbers of currently parked cars filtered by car size' })
+  @ApiParam({ name: 'parkingLotId', type: String })
+  @ApiQuery({ name: 'size', enum: CarSize })
+  @ApiResponse({ status: 200, description: 'Plate numbers for the given car size' })
+  @ApiResponse({ status: 404, description: 'Parking lot not found' })
+  getPlateNumbers(
+    @Param('parkingLotId') parkingLotId: string,
+    @Query('size', new ParseEnumPipe(CarSize)) size: CarSize,
+  ) {
+    return this.parkingLotService.getPlateNumbersByCarSize(parkingLotId, size);
+  }
+
+  @Get(':parkingLotId/slots')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Get slot numbers currently occupied by a specific car size' })
+  @ApiParam({ name: 'parkingLotId', type: String })
+  @ApiQuery({ name: 'size', enum: CarSize })
+  @ApiResponse({ status: 200, description: 'Slot numbers for the given car size' })
+  @ApiResponse({ status: 404, description: 'Parking lot not found' })
+  getSlotNumbers(
+    @Param('parkingLotId') parkingLotId: string,
+    @Query('size', new ParseEnumPipe(CarSize)) size: CarSize,
+  ) {
+    return this.parkingLotService.getSlotNumbersByCarSize(parkingLotId, size);
   }
 }

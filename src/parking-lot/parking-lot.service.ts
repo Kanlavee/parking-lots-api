@@ -7,8 +7,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { ParkingLot } from './entities/parking-lot.entity';
 import { ParkingSlot } from './entities/parking-slot.entity';
+import { Ticket } from '../ticket/entities/ticket.entity';
 import { CreateParkingLotDto } from './dto/create-parking-lot.dto';
 import { SlotSize } from '../common/enums/slot-size.enum';
+import { CarSize } from '../common/enums/car-size.enum';
 
 export interface SlotSummaryItem {
   size: SlotSize;
@@ -24,6 +26,40 @@ export interface CreateParkingLotResponse {
   slotSummary: SlotSummaryItem[];
 }
 
+export interface CurrentCarInfo {
+  plateNumber: string;
+  carSize: CarSize;
+  entryTime: Date;
+}
+
+export interface SlotStatusItem {
+  slotNumber: number;
+  slotSize: SlotSize;
+  isAvailable: boolean;
+  currentCar: CurrentCarInfo | null;
+}
+
+export interface ParkingLotStatusResponse {
+  parkingLotId: string;
+  name: string;
+  totalSlots: number;
+  availableSlots: number;
+  occupiedSlots: number;
+  slots: SlotStatusItem[];
+}
+
+export interface PlatesByCarSizeResponse {
+  carSize: CarSize;
+  count: number;
+  plateNumbers: string[];
+}
+
+export interface SlotsByCarSizeResponse {
+  carSize: CarSize;
+  count: number;
+  slotNumbers: number[];
+}
+
 @Injectable()
 export class ParkingLotService {
   constructor(
@@ -31,6 +67,8 @@ export class ParkingLotService {
     private readonly parkingLotRepository: Repository<ParkingLot>,
     @InjectRepository(ParkingSlot)
     private readonly parkingSlotRepository: Repository<ParkingSlot>,
+    @InjectRepository(Ticket)
+    private readonly ticketRepository: Repository<Ticket>,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -118,5 +156,86 @@ export class ParkingLotService {
       throw new NotFoundException(`Parking lot with id "${id}" not found.`);
     }
     return lot;
+  }
+
+  async getStatus(parkingLotId: string): Promise<ParkingLotStatusResponse> {
+    const lot = await this.findOne(parkingLotId);
+
+    const slots = await this.parkingSlotRepository.find({
+      where: { parkingLot: { id: parkingLotId } },
+      order: { slot_number: 'ASC' },
+    });
+
+    const activeTickets = await this.ticketRepository.find({
+      where: { parkingLot: { id: parkingLotId }, is_active: true },
+      relations: ['parkingSlot'],
+    });
+
+    const ticketBySlotId = new Map<string, Ticket>();
+    for (const ticket of activeTickets) {
+      ticketBySlotId.set(ticket.parkingSlot.id, ticket);
+    }
+
+    const availableSlots = slots.filter((s) => s.is_available).length;
+
+    return {
+      parkingLotId: lot.id,
+      name: lot.name,
+      totalSlots: lot.total_slots,
+      availableSlots,
+      occupiedSlots: lot.total_slots - availableSlots,
+      slots: slots.map((slot) => {
+        const ticket = ticketBySlotId.get(slot.id);
+        return {
+          slotNumber: slot.slot_number,
+          slotSize: slot.slot_size,
+          isAvailable: slot.is_available,
+          currentCar: ticket
+            ? {
+                plateNumber: ticket.plate_number,
+                carSize: ticket.car_size,
+                entryTime: ticket.entry_time,
+              }
+            : null,
+        };
+      }),
+    };
+  }
+
+  async getPlateNumbersByCarSize(
+    parkingLotId: string,
+    carSize: CarSize,
+  ): Promise<PlatesByCarSizeResponse> {
+    await this.findOne(parkingLotId);
+
+    const tickets = await this.ticketRepository.find({
+      where: { parkingLot: { id: parkingLotId }, car_size: carSize, is_active: true },
+    });
+
+    return {
+      carSize,
+      count: tickets.length,
+      plateNumbers: tickets.map((t) => t.plate_number),
+    };
+  }
+
+  async getSlotNumbersByCarSize(
+    parkingLotId: string,
+    carSize: CarSize,
+  ): Promise<SlotsByCarSizeResponse> {
+    await this.findOne(parkingLotId);
+
+    const tickets = await this.ticketRepository.find({
+      where: { parkingLot: { id: parkingLotId }, car_size: carSize, is_active: true },
+      relations: ['parkingSlot'],
+    });
+
+    return {
+      carSize,
+      count: tickets.length,
+      slotNumbers: tickets
+        .map((t) => t.parkingSlot.slot_number)
+        .sort((a, b) => a - b),
+    };
   }
 }

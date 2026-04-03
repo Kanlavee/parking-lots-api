@@ -5,6 +5,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { ParkingLotService } from './parking-lot.service';
 import { ParkingLot } from './entities/parking-lot.entity';
 import { ParkingSlot } from './entities/parking-slot.entity';
+import { Ticket } from '../ticket/entities/ticket.entity';
 import { SlotSize } from '../common/enums/slot-size.enum';
 import { CreateParkingLotDto } from './dto/create-parking-lot.dto';
 
@@ -14,7 +15,13 @@ const mockParkingLotRepository = () => ({
   save: jest.fn(),
 });
 
-const mockParkingSlotRepository = () => ({});
+const mockParkingSlotRepository = () => ({
+  find: jest.fn(),
+});
+
+const mockTicketRepository = () => ({
+  find: jest.fn(),
+});
 
 const buildMockManager = (savedLot: Partial<ParkingLot>) => ({
   create: jest.fn().mockReturnValue(savedLot),
@@ -34,6 +41,8 @@ const mockDataSource = (savedLot: Partial<ParkingLot>) => ({
 describe('ParkingLotService', () => {
   let service: ParkingLotService;
   let parkingLotRepo: ReturnType<typeof mockParkingLotRepository>;
+  let parkingSlotRepo: ReturnType<typeof mockParkingSlotRepository>;
+  let ticketRepo: ReturnType<typeof mockTicketRepository>;
   let dataSource: { transaction: jest.Mock };
 
   const fakeLot: Partial<ParkingLot> = {
@@ -44,6 +53,8 @@ describe('ParkingLotService', () => {
 
   beforeEach(async () => {
     parkingLotRepo = mockParkingLotRepository();
+    parkingSlotRepo = mockParkingSlotRepository();
+    ticketRepo = mockTicketRepository();
 
     const ds = mockDataSource(fakeLot);
     dataSource = ds;
@@ -57,7 +68,11 @@ describe('ParkingLotService', () => {
         },
         {
           provide: getRepositoryToken(ParkingSlot),
-          useValue: mockParkingSlotRepository(),
+          useValue: parkingSlotRepo,
+        },
+        {
+          provide: getRepositoryToken(Ticket),
+          useValue: ticketRepo,
         },
         { provide: DataSource, useValue: ds },
       ],
@@ -156,6 +171,107 @@ describe('ParkingLotService', () => {
       await expect(service.findOne('not-a-real-id')).rejects.toThrow(
         NotFoundException,
       );
+    });
+  });
+
+  // ── getStatus() ───────────────────────────────────────────────────────────
+
+  describe('getStatus()', () => {
+    it('returns lot status with available and occupied slots', async () => {
+      parkingLotRepo.findOne.mockResolvedValue(fakeLot);
+
+      const fakeSlots = [
+        { id: 'slot-1', slot_number: 1, slot_size: SlotSize.LARGE, is_available: false },
+        { id: 'slot-2', slot_number: 2, slot_size: SlotSize.MEDIUM, is_available: true },
+      ];
+      parkingSlotRepo.find.mockResolvedValue(fakeSlots);
+
+      const fakeTicket = {
+        plate_number: 'ABC123',
+        car_size: 'LARGE',
+        entry_time: new Date('2024-01-01T10:00:00Z'),
+        parkingSlot: { id: 'slot-1' },
+      };
+      ticketRepo.find.mockResolvedValue([fakeTicket]);
+
+      const result = await service.getStatus('uuid-lot-1');
+
+      expect(result.parkingLotId).toBe('uuid-lot-1');
+      expect(result.totalSlots).toBe(5);
+      expect(result.availableSlots).toBe(1);
+      expect(result.occupiedSlots).toBe(4);
+      expect(result.slots).toHaveLength(2);
+
+      const occupiedSlot = result.slots[0];
+      expect(occupiedSlot.isAvailable).toBe(false);
+      expect(occupiedSlot.currentCar).not.toBeNull();
+      expect(occupiedSlot.currentCar!.plateNumber).toBe('ABC123');
+
+      const freeSlot = result.slots[1];
+      expect(freeSlot.isAvailable).toBe(true);
+      expect(freeSlot.currentCar).toBeNull();
+    });
+
+    it('throws NotFoundException when parking lot does not exist', async () => {
+      parkingLotRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.getStatus('bad-id')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  // ── getPlateNumbersByCarSize() ────────────────────────────────────────────
+
+  describe('getPlateNumbersByCarSize()', () => {
+    it('returns plate numbers for active tickets of given car size', async () => {
+      parkingLotRepo.findOne.mockResolvedValue(fakeLot);
+      ticketRepo.find.mockResolvedValue([
+        { plate_number: 'AAA111', car_size: 'MEDIUM' },
+        { plate_number: 'BBB222', car_size: 'MEDIUM' },
+      ]);
+
+      const result = await service.getPlateNumbersByCarSize('uuid-lot-1', 'MEDIUM' as any);
+
+      expect(result.carSize).toBe('MEDIUM');
+      expect(result.count).toBe(2);
+      expect(result.plateNumbers).toEqual(['AAA111', 'BBB222']);
+    });
+
+    it('returns empty array when no cars of that size are parked', async () => {
+      parkingLotRepo.findOne.mockResolvedValue(fakeLot);
+      ticketRepo.find.mockResolvedValue([]);
+
+      const result = await service.getPlateNumbersByCarSize('uuid-lot-1', 'LARGE' as any);
+
+      expect(result.count).toBe(0);
+      expect(result.plateNumbers).toEqual([]);
+    });
+  });
+
+  // ── getSlotNumbersByCarSize() ─────────────────────────────────────────────
+
+  describe('getSlotNumbersByCarSize()', () => {
+    it('returns sorted slot numbers for active tickets of given car size', async () => {
+      parkingLotRepo.findOne.mockResolvedValue(fakeLot);
+      ticketRepo.find.mockResolvedValue([
+        { car_size: 'SMALL', parkingSlot: { slot_number: 5 } },
+        { car_size: 'SMALL', parkingSlot: { slot_number: 3 } },
+      ]);
+
+      const result = await service.getSlotNumbersByCarSize('uuid-lot-1', 'SMALL' as any);
+
+      expect(result.carSize).toBe('SMALL');
+      expect(result.count).toBe(2);
+      expect(result.slotNumbers).toEqual([3, 5]); // sorted ascending
+    });
+
+    it('returns empty array when no cars of that size are parked', async () => {
+      parkingLotRepo.findOne.mockResolvedValue(fakeLot);
+      ticketRepo.find.mockResolvedValue([]);
+
+      const result = await service.getSlotNumbersByCarSize('uuid-lot-1', 'LARGE' as any);
+
+      expect(result.count).toBe(0);
+      expect(result.slotNumbers).toEqual([]);
     });
   });
 });

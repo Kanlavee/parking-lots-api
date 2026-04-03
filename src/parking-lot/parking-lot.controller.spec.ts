@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 
 // Mock Swagger decorators — they are metadata-only and incompatible with Jest v30 + lodash UMD
 jest.mock('@nestjs/swagger', () => ({
@@ -14,11 +14,20 @@ jest.mock('@nestjs/swagger', () => ({
 import { ParkingLotController } from './parking-lot.controller';
 import { ParkingLotService } from './parking-lot.service';
 import { SlotSize } from '../common/enums/slot-size.enum';
+import { CarSize } from '../common/enums/car-size.enum';
 import { CreateParkingLotDto } from './dto/create-parking-lot.dto';
-import { CreateParkingLotResponse } from './parking-lot.service';
+import {
+  CreateParkingLotResponse,
+  ParkingLotStatusResponse,
+  PlatesByCarSizeResponse,
+  SlotsByCarSizeResponse,
+} from './parking-lot.service';
 
 const mockParkingLotService = () => ({
   create: jest.fn(),
+  getStatus: jest.fn(),
+  getPlateNumbersByCarSize: jest.fn(),
+  getSlotNumbersByCarSize: jest.fn(),
 });
 
 describe('ParkingLotController', () => {
@@ -82,6 +91,83 @@ describe('ParkingLotController', () => {
       );
 
       await expect(controller.create(dto)).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('GET /parking-lots/:parkingLotId/status', () => {
+    it('delegates to service.getStatus and returns the result', async () => {
+      const expected: ParkingLotStatusResponse = {
+        parkingLotId: 'uuid-lot-1',
+        name: 'Test Lot',
+        totalSlots: 2,
+        availableSlots: 1,
+        occupiedSlots: 1,
+        slots: [
+          {
+            slotNumber: 1,
+            slotSize: SlotSize.LARGE,
+            isAvailable: false,
+            currentCar: {
+              plateNumber: 'ABC123',
+              carSize: CarSize.LARGE,
+              entryTime: new Date('2024-01-01T10:00:00Z'),
+            },
+          },
+          {
+            slotNumber: 2,
+            slotSize: SlotSize.MEDIUM,
+            isAvailable: true,
+            currentCar: null,
+          },
+        ],
+      };
+
+      service.getStatus.mockResolvedValue(expected);
+
+      const result = await controller.getStatus('uuid-lot-1');
+
+      expect(result).toEqual(expected);
+      expect(service.getStatus).toHaveBeenCalledWith('uuid-lot-1');
+    });
+
+    it('propagates NotFoundException when lot does not exist', async () => {
+      service.getStatus.mockRejectedValue(new NotFoundException());
+
+      await expect(controller.getStatus('bad-id')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('GET /parking-lots/:parkingLotId/cars', () => {
+    it('delegates to service.getPlateNumbersByCarSize and returns the result', async () => {
+      const expected: PlatesByCarSizeResponse = {
+        carSize: CarSize.MEDIUM,
+        count: 2,
+        plateNumbers: ['AAA111', 'BBB222'],
+      };
+
+      service.getPlateNumbersByCarSize.mockResolvedValue(expected);
+
+      const result = await controller.getPlateNumbers('uuid-lot-1', CarSize.MEDIUM);
+
+      expect(result).toEqual(expected);
+      expect(service.getPlateNumbersByCarSize).toHaveBeenCalledWith('uuid-lot-1', CarSize.MEDIUM);
+    });
+  });
+
+  describe('GET /parking-lots/:parkingLotId/slots', () => {
+    it('delegates to service.getSlotNumbersByCarSize and returns the result', async () => {
+      const expected: SlotsByCarSizeResponse = {
+        carSize: CarSize.SMALL,
+        count: 2,
+        slotNumbers: [3, 5],
+      };
+
+      service.getSlotNumbersByCarSize.mockResolvedValue(expected);
+
+      const result = await controller.getSlotNumbers('uuid-lot-1', CarSize.SMALL);
+
+      expect(result).toEqual(expected);
+      expect(service.getSlotNumbersByCarSize).toHaveBeenCalledWith('uuid-lot-1', CarSize.SMALL);
     });
   });
 });
