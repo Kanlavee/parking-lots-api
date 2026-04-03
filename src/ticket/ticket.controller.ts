@@ -22,4 +22,19 @@ export class TicketController {
   ) {
     return this.ticketService.parkCar(parkingLotId, dto);
   }
+
+  @Post('leave/:ticketId')
+  @HttpCode(HttpStatus.OK)
+  @ApiParam({ name: 'parkingLotId', description: 'UUID of the parking lot' })
+  @ApiParam({ name: 'ticketId', description: 'UUID of the ticket to close' })
+  @ApiOperation({ summary: 'Release a parking slot and close the ticket' })
+  @ApiResponse({ status: 200, description: 'Slot released, exit summary returned' })
+  @ApiResponse({ status: 404, description: 'Ticket not found' })
+  @ApiResponse({ status: 409, description: 'Ticket already closed (car already left)' })
+  leaveParkingSlot(
+    @Param('parkingLotId') parkingLotId: string,
+    @Param('ticketId') ticketId: string,
+  ) {
+    return this.ticketService.leaveParkingSlot(parkingLotId, ticketId);
+  }
 }

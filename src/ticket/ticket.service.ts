@@ -10,6 +10,7 @@ import { Ticket } from './entities/ticket.entity';
 import { ParkingLot } from '../parking-lot/entities/parking-lot.entity';
 import { ParkingSlot } from '../parking-lot/entities/parking-slot.entity';
 import { ParkCarDto } from './dto/park-car.dto';
+import { LeaveResponseDto } from './dto/leave-response.dto';
 import { CarSize } from '../common/enums/car-size.enum';
 import { SlotSize } from '../common/enums/slot-size.enum';
 
@@ -37,6 +38,21 @@ export class TicketService {
       [CarSize.SMALL]: [SlotSize.LARGE, SlotSize.MEDIUM, SlotSize.SMALL],
     };
     return map[carSize];
+  }
+
+  formatDuration(entryTime: Date, exitTime: Date): string {
+    const diffMs = exitTime.getTime() - entryTime.getTime();
+    const totalMinutes = Math.floor(diffMs / 60000);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+
+    if (hours === 0) {
+      return `${minutes} minute${minutes !== 1 ? 's' : ''}`;
+    }
+    if (minutes === 0) {
+      return `${hours} hour${hours !== 1 ? 's' : ''}`;
+    }
+    return `${hours} hour${hours !== 1 ? 's' : ''} ${minutes} minute${minutes !== 1 ? 's' : ''}`;
   }
 
   async parkCar(
@@ -106,6 +122,53 @@ export class TicketService {
         slotNumber: slot.slot_number,
         slotSize: slot.slot_size,
         entryTime: savedTicket.entry_time,
+      };
+    });
+  }
+
+  async leaveParkingSlot(
+    parkingLotId: string,
+    ticketId: string,
+  ): Promise<LeaveResponseDto> {
+    return this.dataSource.transaction(async (manager) => {
+      // Load ticket with its slot relation
+      const ticket = await manager.findOne(Ticket, {
+        where: { id: ticketId, parkingLot: { id: parkingLotId } },
+        relations: ['parkingSlot'],
+      });
+
+      if (!ticket) {
+        throw new NotFoundException(
+          `Ticket "${ticketId}" not found in parking lot "${parkingLotId}".`,
+        );
+      }
+
+      if (!ticket.is_active) {
+        throw new ConflictException(
+          `Ticket "${ticketId}" is already closed — the car has already left.`,
+        );
+      }
+
+      const exitTime = new Date();
+
+      // Mark ticket as closed
+      ticket.is_active = false;
+      ticket.exit_time = exitTime;
+      await manager.save(Ticket, ticket);
+
+      // Free up the slot for the next car
+      const slot = ticket.parkingSlot;
+      slot.is_available = true;
+      await manager.save(ParkingSlot, slot);
+
+      return {
+        ticketId: ticket.id,
+        plateNumber: ticket.plate_number,
+        carSize: ticket.car_size,
+        slotNumber: slot.slot_number,
+        entryTime: ticket.entry_time,
+        exitTime,
+        duration: this.formatDuration(ticket.entry_time, exitTime),
       };
     });
   }
