@@ -2,13 +2,13 @@
   "moduleFileExtensions": ["js", "json", "ts"],
   "rootDir": "..",
   "testEnvironment": "node",
-  "testMatch": ["**/test/app.e2e-spec.ts"],
+  "testMatch": ["**/test/concurrency.e2e-spec.ts"],
   "transform": {
     "^.+\\.(t|j)s$": "ts-jest"
   },
   "moduleNameMapper": {
-    "^src/(.*)$": "<rootDir>/src/$1",
-    "^@nestjs/swagger$": "<rootDir>/test/__mocks__/@nestjs/swagger.ts"
+    "^src/(.*)$": "<rootDir>/src/$1"
   },
-  "testTimeout": 30000
+  "testTimeout": 30000,
+  "runInBand": true
 }

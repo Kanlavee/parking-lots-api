@@ -2,6 +2,7 @@ import {
   Injectable,
   BadRequestException,
   NotFoundException,
+  Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
@@ -45,6 +46,7 @@ export interface ParkingLotStatusResponse {
   totalSlots: number;
   availableSlots: number;
   occupiedSlots: number;
+  pagination: { limit: number; offset: number; total: number };
   slots: SlotStatusItem[];
 }
 
@@ -62,6 +64,8 @@ export interface SlotsByCarSizeResponse {
 
 @Injectable()
 export class ParkingLotService {
+  private readonly logger = new Logger(ParkingLotService.name);
+
   constructor(
     @InjectRepository(ParkingLot)
     private readonly parkingLotRepository: Repository<ParkingLot>,
@@ -140,6 +144,10 @@ export class ParkingLotService {
 
       await manager.save(ParkingSlot, slotsToInsert as ParkingSlot[]);
 
+      this.logger.log(
+        `CREATED: lot="${savedLot.name}" id=${savedLot.id} totalSlots=${totalSlots}`,
+      );
+
       return {
         id: savedLot.id,
         name: savedLot.name,
@@ -153,17 +161,30 @@ export class ParkingLotService {
   async findOne(id: string): Promise<ParkingLot> {
     const lot = await this.parkingLotRepository.findOne({ where: { id } });
     if (!lot) {
+      this.logger.warn(`findOne — lot not found: id=${id}`);
       throw new NotFoundException(`Parking lot with id "${id}" not found.`);
     }
     return lot;
   }
 
-  async getStatus(parkingLotId: string): Promise<ParkingLotStatusResponse> {
+  async getStatus(
+    parkingLotId: string,
+    limit = 100,
+    offset = 0,
+  ): Promise<ParkingLotStatusResponse> {
     const lot = await this.findOne(parkingLotId);
 
+    // Total count (for pagination metadata) — no LIMIT/OFFSET
+    const totalSlotCount = await this.parkingSlotRepository.count({
+      where: { parkingLot: { id: parkingLotId } },
+    });
+
+    // Paginated slot page
     const slots = await this.parkingSlotRepository.find({
       where: { parkingLot: { id: parkingLotId } },
       order: { slot_number: 'ASC' },
+      take: limit,
+      skip: offset,
     });
 
     const activeTickets = await this.ticketRepository.find({
@@ -176,7 +197,10 @@ export class ParkingLotService {
       ticketBySlotId.set(ticket.parkingSlot.id, ticket);
     }
 
-    const availableSlots = slots.filter((s) => s.is_available).length;
+    // Available count computed from all slots (not just current page)
+    const availableSlots = await this.parkingSlotRepository.count({
+      where: { parkingLot: { id: parkingLotId }, is_available: true },
+    });
 
     return {
       parkingLotId: lot.id,
@@ -184,6 +208,7 @@ export class ParkingLotService {
       totalSlots: lot.total_slots,
       availableSlots,
       occupiedSlots: lot.total_slots - availableSlots,
+      pagination: { limit, offset, total: totalSlotCount },
       slots: slots.map((slot) => {
         const ticket = ticketBySlotId.get(slot.id);
         return {

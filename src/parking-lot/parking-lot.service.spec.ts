@@ -17,6 +17,7 @@ const mockParkingLotRepository = () => ({
 
 const mockParkingSlotRepository = () => ({
   find: jest.fn(),
+  count: jest.fn(),
 });
 
 const mockTicketRepository = () => ({
@@ -184,6 +185,10 @@ describe('ParkingLotService', () => {
         { id: 'slot-1', slot_number: 1, slot_size: SlotSize.LARGE, is_available: false },
         { id: 'slot-2', slot_number: 2, slot_size: SlotSize.MEDIUM, is_available: true },
       ];
+      // count() called twice: total slots, then available slots
+      parkingSlotRepo.count
+        .mockResolvedValueOnce(2)  // total
+        .mockResolvedValueOnce(1); // available
       parkingSlotRepo.find.mockResolvedValue(fakeSlots);
 
       const fakeTicket = {
@@ -194,12 +199,13 @@ describe('ParkingLotService', () => {
       };
       ticketRepo.find.mockResolvedValue([fakeTicket]);
 
-      const result = await service.getStatus('uuid-lot-1');
+      const result = await service.getStatus('uuid-lot-1', 100, 0);
 
       expect(result.parkingLotId).toBe('uuid-lot-1');
       expect(result.totalSlots).toBe(5);
       expect(result.availableSlots).toBe(1);
       expect(result.occupiedSlots).toBe(4);
+      expect(result.pagination).toEqual({ limit: 100, offset: 0, total: 2 });
       expect(result.slots).toHaveLength(2);
 
       const occupiedSlot = result.slots[0];
@@ -215,7 +221,7 @@ describe('ParkingLotService', () => {
     it('throws NotFoundException when parking lot does not exist', async () => {
       parkingLotRepo.findOne.mockResolvedValue(null);
 
-      await expect(service.getStatus('bad-id')).rejects.toThrow(NotFoundException);
+      await expect(service.getStatus('bad-id', 100, 0)).rejects.toThrow(NotFoundException);
     });
   });
 

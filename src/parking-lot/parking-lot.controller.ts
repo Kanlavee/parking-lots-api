@@ -8,6 +8,8 @@ import {
   HttpCode,
   HttpStatus,
   ParseEnumPipe,
+  ParseIntPipe,
+  DefaultValuePipe,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { ParkingLotService } from './parking-lot.service';
@@ -32,10 +34,16 @@ export class ParkingLotController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Get full status of a parking lot including per-slot occupancy' })
   @ApiParam({ name: 'parkingLotId', type: String })
+  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Max slots to return (default 100)' })
+  @ApiQuery({ name: 'offset', required: false, type: Number, description: 'Number of slots to skip (default 0)' })
   @ApiResponse({ status: 200, description: 'Parking lot status with slot details' })
   @ApiResponse({ status: 404, description: 'Parking lot not found' })
-  getStatus(@Param('parkingLotId') parkingLotId: string) {
-    return this.parkingLotService.getStatus(parkingLotId);
+  getStatus(
+    @Param('parkingLotId') parkingLotId: string,
+    @Query('limit', new DefaultValuePipe(100), ParseIntPipe) limit: number,
+    @Query('offset', new DefaultValuePipe(0), ParseIntPipe) offset: number,
+  ) {
+    return this.parkingLotService.getStatus(parkingLotId, limit, offset);
   }
 
   @Get(':parkingLotId/cars')

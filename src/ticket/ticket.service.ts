@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ConflictException,
   UnprocessableEntityException,
+  Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
@@ -25,6 +26,8 @@ export interface ParkCarResponse {
 
 @Injectable()
 export class TicketService {
+  private readonly logger = new Logger(TicketService.name);
+
   constructor(
     @InjectRepository(Ticket)
     private readonly ticketRepository: Repository<Ticket>,
@@ -67,6 +70,7 @@ export class TicketService {
         where: { id: parkingLotId },
       });
       if (!lot) {
+        this.logger.warn(`parkCar — lot not found: lotId=${parkingLotId} plate=${plateNumber}`);
         throw new NotFoundException(
           `Parking lot with id "${parkingLotId}" not found.`,
         );
@@ -77,6 +81,7 @@ export class TicketService {
         where: { plate_number: plateNumber, is_active: true },
       });
       if (existingTicket) {
+        this.logger.warn(`parkCar — duplicate park attempt: plate=${plateNumber} lot=${lot.name}`);
         throw new ConflictException(
           `Vehicle "${plateNumber}" is already parked. Please leave first.`,
         );
@@ -96,6 +101,9 @@ export class TicketService {
         .getOne();
 
       if (!slot) {
+        this.logger.warn(
+          `parkCar — no available slot: lot=${lot.name} carSize=${dto.carSize} plate=${plateNumber}`,
+        );
         throw new UnprocessableEntityException(
           `No available slot for a ${dto.carSize} car in parking lot "${lot.name}".`,
         );
@@ -114,6 +122,11 @@ export class TicketService {
         is_active: true,
       });
       const savedTicket = await manager.save(Ticket, ticket);
+
+      this.logger.log(
+        `PARKED: plate=${savedTicket.plate_number} carSize=${savedTicket.car_size} ` +
+        `slot=#${slot.slot_number}(${slot.slot_size}) lot=${lot.name} ticketId=${savedTicket.id}`,
+      );
 
       return {
         ticketId: savedTicket.id,
@@ -138,12 +151,14 @@ export class TicketService {
       });
 
       if (!ticket) {
+        this.logger.warn(`leaveParkingSlot — ticket not found: ticketId=${ticketId} lotId=${parkingLotId}`);
         throw new NotFoundException(
           `Ticket "${ticketId}" not found in parking lot "${parkingLotId}".`,
         );
       }
 
       if (!ticket.is_active) {
+        this.logger.warn(`leaveParkingSlot — already closed: ticketId=${ticketId} plate=${ticket.plate_number}`);
         throw new ConflictException(
           `Ticket "${ticketId}" is already closed — the car has already left.`,
         );
@@ -161,6 +176,11 @@ export class TicketService {
       slot.is_available = true;
       await manager.save(ParkingSlot, slot);
 
+      const duration = this.formatDuration(ticket.entry_time, exitTime);
+      this.logger.log(
+        `LEFT: plate=${ticket.plate_number} slot=#${slot.slot_number} ticketId=${ticket.id} duration=${duration}`,
+      );
+
       return {
         ticketId: ticket.id,
         plateNumber: ticket.plate_number,
@@ -168,7 +188,7 @@ export class TicketService {
         slotNumber: slot.slot_number,
         entryTime: ticket.entry_time,
         exitTime,
-        duration: this.formatDuration(ticket.entry_time, exitTime),
+        duration,
       };
     });
   }

@@ -102,6 +102,7 @@ describe('ParkingLotController', () => {
         totalSlots: 2,
         availableSlots: 1,
         occupiedSlots: 1,
+        pagination: { limit: 100, offset: 0, total: 2 },
         slots: [
           {
             slotNumber: 1,
@@ -124,16 +125,16 @@ describe('ParkingLotController', () => {
 
       service.getStatus.mockResolvedValue(expected);
 
-      const result = await controller.getStatus('uuid-lot-1');
+      const result = await controller.getStatus('uuid-lot-1', 100, 0);
 
       expect(result).toEqual(expected);
-      expect(service.getStatus).toHaveBeenCalledWith('uuid-lot-1');
+      expect(service.getStatus).toHaveBeenCalledWith('uuid-lot-1', 100, 0);
     });
 
     it('propagates NotFoundException when lot does not exist', async () => {
       service.getStatus.mockRejectedValue(new NotFoundException());
 
-      await expect(controller.getStatus('bad-id')).rejects.toThrow(NotFoundException);
+      await expect(controller.getStatus('bad-id', 100, 0)).rejects.toThrow(NotFoundException);
     });
   });
 
