@@ -26,6 +26,5 @@ coverage
 # Docs
 *.md
 
-# TypeScript source — only compiled dist is needed in image
-src
+# E2E test files — not needed in the image; builder compiles only src/ via tsconfig.build.json
 test
