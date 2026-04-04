@@ -1,98 +1,173 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Parking Lot API
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+A production-quality REST API for managing parking lots, assigning slots, and tracking vehicle tickets — built as a backend interview test.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Tech Stack
 
-## Description
+| Layer | Choice |
+|---|---|
+| Framework | NestJS 11 (TypeScript strict mode) |
+| Database | PostgreSQL 15 via TypeORM 0.3 |
+| Containerisation | Docker (multi-stage build) + Docker Compose |
+| Validation | class-validator + class-transformer |
+| API Docs | Swagger UI (`/api`) |
+| Unit Tests | Jest v30 (40 tests) |
+| E2E Tests | Jest + Supertest + pg-mem in-memory PostgreSQL (15 tests) |
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## Design Decisions
 
-## Project setup
+### 1. Linear lot layout
+The spec says there is a single entrance. A linear numbered-slot model (slot 1, 2, 3 ... N) is the simplest layout that matches reality — no grid, no radius.
 
-```bash
-$ npm install
-```
+### 2. Slots have a physical size
+The spec mentions cars have a size but is silent on slots. I chose to give slots a size too because it is more realistic and adds meaningful business logic:
+- `LARGE` slot → accepts LARGE cars only  
+- `MEDIUM` slot → accepts LARGE or MEDIUM cars  
+- `SMALL` slot → accepts any car size
 
-## Compile and run the project
+### 3. Slot assignment order: LARGE → MEDIUM → SMALL
+When a lot is created, slots are numbered in LARGE-first order. This guarantees the nearest slots (lowest numbers) can accommodate the widest range of cars, minimising wasted large slots for small cars in practice.
 
-```bash
-# development
-$ npm run start
+### 4. Nearest-available-first assignment
+When parking a car, the system picks the lowest-numbered compatible slot. This is deterministic and fair.
 
-# watch mode
-$ npm run start:dev
+### 5. Uppercase normalisation
+All `carSize` / `slotSize` values are stored as `SMALL | MEDIUM | LARGE`. Plate numbers are normalised to uppercase on entry (e.g. `abc-1234` → `ABC-1234`).
 
-# production mode
-$ npm run start:prod
-```
+### 6. Pessimistic write lock on slot selection
+`parkCar()` wraps slot selection and reservation in a transaction with a `pessimistic_write` lock, preventing double-booking under concurrent requests.
 
-## Run tests
+---
 
-```bash
-# unit tests
-$ npm run test
+## Project Setup
 
-# e2e tests
-$ npm run test:e2e
+### Prerequisites
+- Node.js 20+
+- Docker + Docker Compose (for the database)
 
-# test coverage
-$ npm run test:cov
-```
-
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+### Run locally with Docker
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+# Start PostgreSQL and the API together
+docker compose up --build
+
+# API is available at http://localhost:3000
+# Swagger UI is available at http://localhost:3000/api
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+### Run locally without Docker (requires a running PostgreSQL instance)
 
-## Resources
+```bash
+# 1. Copy environment variables
+cp .env.example .env
+# Edit .env with your database credentials
 
-Check out a few resources that may come in handy when working with NestJS:
+# 2. Install dependencies
+npm install
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+# 3. Start in watch mode
+npm run start:dev
+```
 
-## Support
+### Environment Variables
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+Copy `.env.example` to `.env` and fill in the values:
 
-## Stay in touch
+| Variable | Default | Description |
+|---|---|---|
+| `PORT` | `3000` | HTTP port |
+| `NODE_ENV` | `development` | Controls logging and synchronize |
+| `DB_HOST` | `localhost` | PostgreSQL host |
+| `DB_PORT` | `5432` | PostgreSQL port |
+| `DB_USERNAME` | `postgres` | Database user |
+| `DB_PASSWORD` | `postgres` | Database password |
+| `DB_DATABASE` | `parking_lot_db` | Database name |
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+---
 
-## License
+## Running Tests
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+```bash
+# All unit tests (40 tests)
+npm test
+
+# All E2E tests — no database required, uses pg-mem in-memory PostgreSQL (15 tests)
+npm run test:e2e
+
+# Coverage report
+npm run test:cov
+```
+
+---
+
+## API Reference
+
+### Parking Lots
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/parking-lots` | Create a new parking lot with sized slot groups |
+| `GET` | `/parking-lots/:id/status` | Full slot map with current occupant per slot |
+| `GET` | `/parking-lots/:id/cars?size=` | Plate numbers of parked cars filtered by car size |
+| `GET` | `/parking-lots/:id/slots?size=` | Slot numbers occupied by a given car size |
+
+### Tickets
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/parking-lots/:id/park` | Park a car — returns a ticket |
+| `POST` | `/parking-lots/:id/leave/:ticketId` | Release a slot — returns duration |
+
+Interactive documentation with request/response schemas is available at `/api` (Swagger UI) when the app is running.
+
+---
+
+## Response Envelope
+
+All responses are wrapped by a global interceptor and filter:
+
+**Success:**
+```json
+{
+  "data": { ... },
+  "timestamp": "2026-04-04T08:00:00.000Z",
+  "path": "/parking-lots"
+}
+```
+
+**Error:**
+```json
+{
+  "statusCode": 404,
+  "message": "Parking lot with id \"abc\" not found.",
+  "error": "Not Found",
+  "path": "/parking-lots/abc/status",
+  "timestamp": "2026-04-04T08:00:00.000Z"
+}
+```
+
+---
+
+## Example Walkthrough
+
+```bash
+# 1. Create a parking lot with 2 LARGE, 3 MEDIUM, 5 SMALL slots
+curl -X POST http://localhost:3000/parking-lots \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Central Parking","slots":[{"size":"LARGE","count":2},{"size":"MEDIUM","count":3},{"size":"SMALL","count":5}]}'
+
+# 2. Park a medium car (uses nearest compatible slot — slot 1 or 2, which are LARGE and accept MEDIUM)
+curl -X POST http://localhost:3000/parking-lots/<lotId>/park \
+  -H "Content-Type: application/json" \
+  -d '{"plateNumber":"ABC-1234","carSize":"MEDIUM"}'
+
+# 3. Check lot status
+curl http://localhost:3000/parking-lots/<lotId>/status
+
+# 4. Query which MEDIUM cars are parked
+curl "http://localhost:3000/parking-lots/<lotId>/cars?size=MEDIUM"
+
+# 5. Release the slot
+curl -X POST http://localhost:3000/parking-lots/<lotId>/leave/<ticketId>
+```
+
