@@ -1,6 +1,6 @@
 # Parking Lot API
 
-A production-quality REST API for managing parking lots, assigning slots, and tracking vehicle tickets — built as a backend interview test.
+A production-quality REST API for managing parking lots, assigning slots, and tracking vehicle tickets 
 
 ## Tech Stack
 
@@ -20,11 +20,13 @@ A production-quality REST API for managing parking lots, assigning slots, and tr
 The spec says there is a single entrance. A linear numbered-slot model (slot 1, 2, 3 ... N) is the simplest layout that matches reality — no grid, no radius.
 
 ### 2. Slots have a physical size
-The spec mentions cars have a size but is silent on slots. I chose to give slots a size too because it is more realistic and adds meaningful business logic:
-- `LARGE` slot → accepts LARGE cars only  
-- `MEDIUM` slot → accepts LARGE or MEDIUM cars  
-- `SMALL` slot → accepts any car size
+The spec mentions cars have a size but is silent on slots. I chose to give slots a size as well, which adds realistic constraints and meaningful allocation logic:
 
+- `LARGE` slot → accepts LARGE, MEDIUM, and SMALL cars  
+- `MEDIUM` slot → accepts MEDIUM and SMALL cars  
+- `SMALL` slot → accepts SMALL cars only  
+
+This ensures better space utilisation by allowing smaller cars to occupy larger slots when necessary, while preventing larger cars from occupying smaller slots.
 ### 3. Slot assignment order: LARGE → MEDIUM → SMALL
 When a lot is created, slots are numbered in LARGE-first order. This guarantees the nearest slots (lowest numbers) can accommodate the widest range of cars, minimising wasted large slots for small cars in practice.
 
