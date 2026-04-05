@@ -14,6 +14,7 @@ import { ParkingSlot } from '../../parking-lot/entities/parking-slot.entity';
 
 @Entity('tickets')
 @Index(['parkingLot', 'is_active'])
+@Index(['parkingSlot', 'is_active'])
 @Index(['plate_number', 'is_active'])
 export class Ticket {
   @PrimaryGeneratedColumn('uuid')

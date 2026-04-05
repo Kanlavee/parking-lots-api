@@ -185,10 +185,8 @@ describe('ParkingLotService', () => {
         { id: 'slot-1', slot_number: 1, slot_size: SlotSize.LARGE, is_available: false },
         { id: 'slot-2', slot_number: 2, slot_size: SlotSize.MEDIUM, is_available: true },
       ];
-      // count() called twice: total slots, then available slots
-      parkingSlotRepo.count
-        .mockResolvedValueOnce(2)  // total
-        .mockResolvedValueOnce(1); // available
+      // count() called once: available slots (total comes from lot.total_slots)
+      parkingSlotRepo.count.mockResolvedValueOnce(1); // available
       parkingSlotRepo.find.mockResolvedValue(fakeSlots);
 
       const fakeTicket = {
@@ -205,7 +203,7 @@ describe('ParkingLotService', () => {
       expect(result.totalSlots).toBe(5);
       expect(result.availableSlots).toBe(1);
       expect(result.occupiedSlots).toBe(4);
-      expect(result.pagination).toEqual({ limit: 100, offset: 0, total: 2 });
+      expect(result.pagination).toEqual({ limit: 100, offset: 0, total: 5 });
       expect(result.slots).toHaveLength(2);
 
       const occupiedSlot = result.slots[0];

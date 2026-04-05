@@ -5,7 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { Repository, DataSource, In } from 'typeorm';
 import { ParkingLot } from './entities/parking-lot.entity';
 import { ParkingSlot } from './entities/parking-slot.entity';
 import { Ticket } from '../ticket/entities/ticket.entity';
@@ -174,11 +174,6 @@ export class ParkingLotService {
   ): Promise<ParkingLotStatusResponse> {
     const lot = await this.findOne(parkingLotId);
 
-    // Total count (for pagination metadata) — no LIMIT/OFFSET
-    const totalSlotCount = await this.parkingSlotRepository.count({
-      where: { parkingLot: { id: parkingLotId } },
-    });
-
     // Paginated slot page
     const slots = await this.parkingSlotRepository.find({
       where: { parkingLot: { id: parkingLotId } },
@@ -187,17 +182,22 @@ export class ParkingLotService {
       skip: offset,
     });
 
-    const activeTickets = await this.ticketRepository.find({
-      where: { parkingLot: { id: parkingLotId }, is_active: true },
-      relations: ['parkingSlot'],
-    });
+    // Fetch active tickets only for the displayed page (not the entire lot)
+    const slotIds = slots.map((s) => s.id);
+    const activeTickets =
+      slotIds.length > 0
+        ? await this.ticketRepository.find({
+            where: { parkingSlot: { id: In(slotIds) }, is_active: true },
+            relations: ['parkingSlot'],
+          })
+        : [];
 
     const ticketBySlotId = new Map<string, Ticket>();
     for (const ticket of activeTickets) {
       ticketBySlotId.set(ticket.parkingSlot.id, ticket);
     }
 
-    // Available count computed from all slots (not just current page)
+    // Available count across all slots (not just current page)
     const availableSlots = await this.parkingSlotRepository.count({
       where: { parkingLot: { id: parkingLotId }, is_available: true },
     });
@@ -208,7 +208,7 @@ export class ParkingLotService {
       totalSlots: lot.total_slots,
       availableSlots,
       occupiedSlots: lot.total_slots - availableSlots,
-      pagination: { limit, offset, total: totalSlotCount },
+      pagination: { limit, offset, total: lot.total_slots },
       slots: slots.map((slot) => {
         const ticket = ticketBySlotId.get(slot.id);
         return {
